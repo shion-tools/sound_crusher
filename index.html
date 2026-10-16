@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#171717">
+<title>MP3 音割れメーカー</title>
+<style>
+:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:#111;color:#f5f5f5;min-height:100vh;padding:24px 16px calc(30px + env(safe-area-inset-bottom))}
+main{max-width:620px;margin:0 auto}
+h1{font-size:1.7rem;line-height:1.25;margin:0 0 8px}
+.sub{color:#b8b8b8;line-height:1.6;margin:0 0 22px}
+.panel{background:#1d1d1d;border:1px solid #383838;border-radius:18px;padding:18px;margin:14px 0}
+label,.label{display:block;font-weight:700;margin:0 0 10px}
+input[type=file]{width:100%;padding:12px;background:#292929;border:1px solid #4a4a4a;border-radius:12px;color:#eee}
+input[type=range]{width:100%;accent-color:#ff4d4d}
+.range-row{display:flex;justify-content:space-between;gap:12px;align-items:center}
+output{font-variant-numeric:tabular-nums;color:#ff7777;font-weight:800}
+button,.download{display:block;width:100%;border:0;border-radius:13px;padding:15px 16px;font-size:1rem;font-weight:800;text-align:center;text-decoration:none;cursor:pointer}
+button{background:#ff4949;color:#fff}
+button:disabled{opacity:.45;cursor:not-allowed}
+.download{background:#f5f5f5;color:#111;margin-top:12px}
+.note{font-size:.9rem;line-height:1.6;color:#c7c7c7}
+.status{white-space:pre-wrap;line-height:1.55;margin-top:14px;color:#ffe0a6}
+small{color:#aaa}
+</style>
+</head>
+<body>
+<main>
+  <h1>🔊 MP3 音割れメーカー</h1>
+  <p class="sub">MP3を選んで、音割れを強くして書き出そう。処理は基本的にこのブラウザ内で行います。</p>
+  <section class="panel">
+    <label for="file">① MP3ファイルを選択</label>
+    <input id="file" type="file" accept=".mp3,audio/mpeg,audio/mp3">
+    <p id="fileInfo" class="note">ファイルは1回につき1つ。大きすぎる音声はiPhoneのメモリ不足で失敗することがあります。</p>
+  </section>
+  <section class="panel">
+    <div class="range-row"><label for="drive">② 音割れの強さ</label><output id="driveOut">強烈</output></div>
+    <input id="drive" type="range" min="1" max="100" value="85" step="1">
+    <div class="range-row"><small>軽め</small><small>鼓膜破壊級（音量注意）</small></div>
+    <p class="note">大音量で再生しないでね。イヤホン・スピーカーを傷めたり、耳に負担がかかったりすることがあります。</p>
+  </section>
+  <section class="panel">
+    <button id="go" disabled>③ 音割れMP3を作る</button>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <a id="download" class="download" hidden>音割れMP3を保存</a>
+  </section>
+  <p class="note">初回はMP3エンコーダーの読み込みにインターネット接続が必要です。音声はこのページから外部サーバーへアップロードしません。Safariを閉じたり画面を切り替えたりすると処理が中断する場合があります。</p>
+</main>
+<script>
+const fileInput = document.getElementById('file');
+const drive = document.getElementById('drive');
+const driveOut = document.getElementById('driveOut');
+const go = document.getElementById('go');
+const status = document.getElementById('status');
+const download = document.getElementById('download');
+const fileInfo = document.getElementById('fileInfo');
+let chosenFile = null;
+
+function strengthLabel(v) {
+  if (v < 20) return '軽め';
+  if (v < 40) return '中';
+  if (v < 65) return '強め';
+  if (v < 85) return '激強';
+  return '強烈';
+}
+drive.addEventListener('input', () => driveOut.textContent = strengthLabel(Number(drive.value)));
+fileInput.addEventListener('change', () => {
+  chosenFile = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+  download.hidden = true;
+  status.textContent = '';
+  go.disabled = !chosenFile;
+  if (chosenFile) {
+    fileInfo.textContent = `${chosenFile.name} · ${(chosenFile.size / 1024 / 1024).toFixed(1)} MB`;
+    if (!/\.mp3$/i.test(chosenFile.name) && chosenFile.type !== 'audio/mpeg') {
+      status.textContent = 'MP3ファイルを選んでね。';
+      go.disabled = true;
+    }
+  } else {
+    fileInfo.textContent = 'ファイルは1回につき1つ。大きすぎる音声はiPhoneのメモリ不足で失敗することがあります。';
+  }
+});
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    if (window.lamejs) return resolve();
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('MP3エンコーダーを読み込めませんでした。通信状態を確認して再試行してね。'));
+    document.head.appendChild(s);
+  });
+}
+
+go.addEventListener('click', async () => {
+  if (!chosenFile) return;
+  go.disabled = true;
+  download.hidden = true;
+  status.textContent = '準備中…';
+  let audioCtx;
+  try {
+    await loadScript('https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js');
+    status.textContent = '音声を読み込み中…';
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const inputBuffer = await chosenFile.arrayBuffer();
+    const audio = await audioCtx.decodeAudioData(inputBuffer);
+    const sampleRate = audio.sampleRate;
+    const channels = Math.min(2, audio.numberOfChannels);
+    const length = audio.length;
+    const driveValue = Number(drive.value);
+    // Strong asymmetric waveshaping + hard clipping. Normalize the drive so the slider
+    // changes distortion without creating arbitrary extreme output sample values.
+    const amount = 1 + (driveValue / 100) * 28;
+    const processed = [];
+    for (let ch = 0; ch < channels; ch++) {
+      const src = audio.getChannelData(ch);
+      const dst = new Float32Array(length);
+      for (let i = 0; i < length; i++) {
+        const x = src[i] * amount;
+        // tanh-style saturation followed by deliberate hard clipping
+        let y = Math.tanh(x * 1.8) / Math.tanh(1.8);
+        const clip = 0.12 + (1 - driveValue / 100) * 0.5;
+        y = Math.max(-clip, Math.min(clip, y));
+        dst[i] = y / Math.max(clip, 0.12) * 0.92;
+      }
+      processed.push(dst);
+    }
+    const Encoder = window.lamejs.Mp3Encoder;
+    const kbps = 192;
+    const encoder = new Encoder(channels, sampleRate, kbps);
+    const blockSize = 1152;
+    const chunks = [];
+    const left = new Int16Array(blockSize);
+    const right = channels === 2 ? new Int16Array(blockSize) : null;
+    function toInt16(v) {
+      const clamped = Math.max(-1, Math.min(1, v));
+      return clamped < 0 ? Math.round(clamped * 32768) : Math.round(clamped * 32767);
+    }
+    status.textContent = '音割れ加工・MP3変換中…\n長い音声は少し時間がかかるよ。';
+    for (let offset = 0; offset < length; offset += blockSize) {
+      const n = Math.min(blockSize, length - offset);
+      for (let i = 0; i < n; i++) {
+        left[i] = toInt16(processed[0][offset + i]);
+        if (channels === 2) right[i] = toInt16(processed[1][offset + i]);
+      }
+      const mp3buf = channels === 2
+        ? encoder.encodeBuffer(left.subarray(0,n), right.subarray(0,n))
+        : encoder.encodeBuffer(left.subarray(0,n));
+      if (mp3buf.length) chunks.push(new Int8Array(mp3buf));
+      if (offset % (blockSize * 120) === 0) {
+        status.textContent = `音割れ加工・MP3変換中… ${Math.min(100, Math.round(offset / length * 100))}%`;
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    const tail = encoder.flush();
+    if (tail.length) chunks.push(new Int8Array(tail));
+    const blob = new Blob(chunks, {type:'audio/mpeg'});
+    const url = URL.createObjectURL(blob);
+    download.href = url;
+    const baseName = chosenFile.name.replace(/\.mp3$/i, '');
+    download.download = `${baseName}_音割れ.mp3`;
+    download.textContent = `音割れMP3を保存（${(blob.size/1024/1024).toFixed(1)} MB）`;
+    download.hidden = false;
+    status.textContent = '完成！ 下のボタンから保存してね。';
+  } catch (err) {
+    console.error(err);
+    status.textContent = '失敗しました: ' + (err && err.message ? err.message : String(err)) +
+      '\n短いMP3で再試行してみてね。';
+  } finally {
+    if (audioCtx) { try { await audioCtx.close(); } catch (_) {} }
+    go.disabled = !chosenFile;
+  }
+});
+</script>
+</body>
+</html>
