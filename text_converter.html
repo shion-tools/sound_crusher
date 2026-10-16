@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文字変換ツール</title>
+<style>
+:root{color-scheme:light dark}
+body{font-family:system-ui,-apple-system,sans-serif;max-width:760px;margin:0 auto;padding:20px;line-height:1.55}
+h1{font-size:1.5rem} textarea{box-sizing:border-box;width:100%;min-height:130px;padding:12px;border:1px solid #8888;border-radius:12px;font:inherit}
+button{border:0;border-radius:10px;padding:11px 15px;font:inherit;font-weight:650;cursor:pointer;margin:8px 6px 8px 0}
+.primary{background:#2563eb;color:white}.secondary{background:#8883}
+.hint{opacity:.78;font-size:.92rem}label{display:block;margin:12px 0 6px;font-weight:650}#status{min-height:1.5em}
+</style>
+</head>
+<body>
+<h1>文字変換ツール</h1>
+<p>日本語の文字はすべての後ろに「゛」を追加し、日本語以外の文字には <code>"</code> を追加します。</p>
+<label for="source">入力</label>
+<textarea id="source" placeholder="例：こんにちは ABC123"></textarea>
+<div><button class="primary" id="convert">変換する</button><button class="secondary" id="clear">クリア</button></div>
+<label for="result">変換結果</label>
+<textarea id="result" readonly placeholder="ここに変換結果が表示されます"></textarea>
+<button class="primary" id="copy">結果をコピー</button>
+<p id="status" class="hint" aria-live="polite"></p>
+<script>
+(() => {
+ const source=document.getElementById('source'), result=document.getElementById('result'), status=document.getElementById('status');
+ // 日本語の文字（ひらがな・カタカナ・漢字・日本語の句読点や記号など）を判定
+ function isJapanese(ch) {
+   return /[\u3000-\u303f\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff61-\uff9f]/u.test(ch);
+ }
+ function transform(text) {
+   return [...text].map(ch => isJapanese(ch) ? ch + '\u309b' : ch + '"').join('');
+ }
+ document.getElementById('convert').addEventListener('click',()=>{result.value=transform(source.value);status.textContent='変換しました！';});
+ document.getElementById('clear').addEventListener('click',()=>{source.value='';result.value='';status.textContent='';source.focus();});
+ document.getElementById('copy').addEventListener('click',async()=>{
+   if(!result.value){status.textContent='先に変換してね。';return;}
+   try{await navigator.clipboard.writeText(result.value);status.textContent='コピーしました！';}
+   catch{result.focus();result.select();status.textContent='結果を選択しました。コピー操作をしてください。';}
+ });
+})();
+</script>
+</body>
+</html>
